@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Calculus Visualizer</title>
+<meta name="description" content="An interactive calculus visualizer. See the tangent line and signed area under any function you type.">
+<meta name="color-scheme" content="dark">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT@9..144,300..900,0..100&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+
+<style>
+/* ================================================================
+   DESIGN TOKENS
+================================================================ */
+:root {
+  /* Palette — 3B1B / Wolfram-dark inspired */
+  --bg:        #0A0D12;
+  --bg-soft:   #0E1116;
+  --panel:     #141820;
+  --panel-hi:  #1a1f29;
+  --line:      #232832;
+  --line-soft: #1a1e26;
+  --axis:      #5a6170;
+  --text:      #E8E8E8;
+  --text-mute: #9097a3;
+  --text-dim:  #5a6170;
+
+  --fn:        #58C4DD;  /* curve */
+  --fn-glow:   rgba(88, 196, 221, 0.22);
+  --tan:       #F0AC5F;  /* tangent */
+  --area:      #83C167;  /* area under curve */
+  --point:     #FC6255;  /* point marker */
+  --accent:    #9A72AC;  /* subtle accents */
+
+  /* Type */
+  --serif: "Fraunces", "Cambria", Georgia, "Times New Roman", serif;
+  --mono:  "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Rhythm */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --ease: cubic-bezier(.4, 0, .2, 1);
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  min-height: 100vh;
+  font-family: var(--serif);
+  color: var(--text);
+  background: var(--bg);
+  font-variation-settings: "opsz" 14, "SOFT" 20;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ================================================================
+   ATMOSPHERIC BACKGROUND
+================================================================ */
+.bg-layer {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+}
+.bg-grid {
+  background-image:
+    linear-gradient(var(--line-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.35;
+  mask-image: radial-gradient(ellipse at 50% 30%, black 30%, transparent 80%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 30%, black 30%, transparent 80%);
+}
+.bg-glow {
+  background:
+    radial-gradient(ellipse 900px 500px at 15% 0%,  rgba(88, 196, 221, 0.09) 0%, transparent 60%),
+    radial-gradient(ellipse 700px 400px at 90% 10%, rgba(154, 114, 172, 0.07) 0%, transparent 60%),
+    radial-gradient(ellipse 600px 500px at 50% 110%, rgba(131, 193, 103, 0.05) 0%, transparent 65%);
+}
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.9  0 0 0 0 0.9  0 0 0 0.35 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
+
+/* ================================================================
+   LAYOUT
+================================================================ */
+.shell {
+  position: relative; z-index: 1;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 48px 32px 80px;
+}
+
+/* ------ Header ------ */
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 36px;
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--fn);
+  margin-bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--fn);
+  box-shadow: 0 0 12px var(--fn-glow);
+}
+.title {
+  font-family: var(--serif);
+  font-variation-settings: "opsz" 144, "SOFT" 30, "wght" 500;
+  font-size: clamp(44px, 7.5vw, 86px);
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+.title em {
+  font-style: italic;
+  font-variation-settings: "opsz" 144, "SOFT" 100, "wght" 400;
+  color: var(--fn);
+}
+.subtitle {
+  font-family: var(--serif);
+  font-size: clamp(15px, 1.4vw, 18px);
+  font-style: italic;
+  font-weight: 300;
+  color: var(--text-mute);
+  margin: 0;
+  max-width: 620px;
+  line-height: 1.5;
+}
+
+/* ------ Workspace ------ */
+.function-bar {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  align-items: stretch;
+}
+
+@media (max-width: 1024px) {
+  .function-bar { grid-template-columns: 1fr; }
+  .workspace   { grid-template-columns: 1fr; }
+}
+
+/* ================================================================
+   FUNCTION INPUT
+================================================================ */
+.fn-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  transition: border-color 180ms var(--ease);
+}
+.fn-card:focus-within {
+  border-color: var(--fn);
+  box-shadow: 0 0 0 3px rgba(88, 196, 221, 0.12);
+}
+.fn-card.error {
+  border-color: var(--point);
+}
+.fn-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 8px;
+}
+.fn-input-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.fn-input-row .lhs {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 22px;
+  font-variation-settings: "opsz" 48, "wght" 400;
+  color: var(--text-mute);
+}
+.fn-input-row .lhs .x { color: var(--fn); }
+.fn-input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 17px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 2px 0;
+  letter-spacing: 0.01em;
+}
+.fn-input::placeholder { color: var(--text-dim); }
+.fn-error {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--point);
+  min-height: 14px;
+  letter-spacing: 0.02em;
+}
+
+/* Preset chips */
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+  padding-top: 2px;
+}
+.chip {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  font-variation-settings: "opsz" 24, "wght" 400;
+  color: var(--text-mute);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: all 160ms var(--ease);
+  line-height: 1;
+}
+.chip:hover {
+  color: var(--fn);
+  border-color: var(--fn);
+  background: rgba(88, 196, 221, 0.06);
+  transform: translateY(-1px);
+}
+.chip:active { transform: translateY(0); }
+
+/* ================================================================
+   PLOT
+================================================================ */
+.plot-wrap {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;
+  display: flex;
+}
+.plot-wrap::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 600px 400px at 50% 50%, rgba(88, 196, 221, 0.04) 0%, transparent 70%);
+  pointer-events: none;
+}
+canvas#plot {
+  width: 100%;
+  height: 100%;
+  display: block;
+  min-height: 504px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ================================================================
+   CONTROL PANEL
+================================================================ */
+.controls {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.ctrl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ctrl-section + .ctrl-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.ctrl-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.ctrl-title .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.ctrl-section[data-color="tangent"] .dot { background: var(--tan); }
+.ctrl-section[data-color="area"]    .dot { background: var(--area); }
+.ctrl-section[data-color="view"]    .dot { background: var(--accent); }
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 32px; height: 18px;
+  cursor: pointer;
+}
+.toggle input { display: none; }
+.toggle .track {
+  position: absolute; inset: 0;
+  background: var(--line);
+  border-radius: 9px;
+  transition: background 160ms var(--ease);
+}
+.toggle .thumb {
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 14px; height: 14px;
+  background: var(--text-mute);
+  border-radius: 50%;
+  transition: all 160ms var(--ease);
+}
+.toggle input:checked ~ .track { background: currentColor; opacity: 0.35; }
+.toggle input:checked ~ .thumb { left: 16px; background: currentColor; }
+.ctrl-section[data-color="tangent"] .toggle { color: var(--tan); }
+.ctrl-section[data-color="area"]    .toggle { color: var(--area); }
+
+/* Slider */
+.slider-row {
+  display: grid;
+  grid-template-columns: 24px 1fr 60px;
+  align-items: center;
+  gap: 12px;
+}
+.slider-row .lbl {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--text-mute);
+}
+.slider-row .val {
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: right;
+  color: var(--text);
+}
+input[type="range"].sl {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  outline: none;
+  cursor: grab;
+  accent-color: var(--fn);
+}
+input[type="range"].sl:active { cursor: grabbing; }
+input[type="range"].sl::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--thumb, var(--fn));
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line), 0 0 16px var(--thumb-glow, var(--fn-glow));
+  transition: transform 120ms var(--ease);
+  cursor: grab;
+}
+input[type="range"].sl::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--thumb, var(--fn));
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line), 0 0 16px var(--thumb-glow, var(--fn-glow));
+  cursor: grab;
+}
+input[type="range"].sl:hover::-webkit-slider-thumb { transform: scale(1.1); }
+input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
+
+.sl-tangent { --thumb: var(--tan); --thumb-glow: rgba(240, 172, 95, 0.4); }
+.sl-area    { --thumb: var(--area); --thumb-glow: rgba(131, 193, 103, 0.4); }
+.sl-view    { --thumb: var(--accent); --thumb-glow: rgba(154, 114, 172, 0.35); }
+
+/* Readout panel */
+.readout {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-top: 4px;
+}
+.readout .lbl {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  display: block;
+}
+.readout .eq {
+  font-size: 14px;
+  margin-bottom: 14px;
+  min-height: 20px;
+  color: var(--text);
+  overflow-x: auto;
+}
+.readout .eq .katex {
+  font-size: 1.05em;
+}
+.readout .kv {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  align-items: baseline;
+}
+.readout .kv .k {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--text-mute);
+}
+.readout .kv .k em { font-style: italic; }
+.readout .kv .v-fn  { color: var(--fn); }
+.readout .kv .v-tan { color: var(--tan); }
+.readout .kv .v-int { color: var(--area); }
+
+/* ================================================================
+   FOOTER
+================================================================ */
+.footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.footer a { color: var(--text-mute); text-decoration: none; border-bottom: 1px dotted var(--text-dim); }
+.footer a:hover { color: var(--fn); border-color: var(--fn); }
+
+/* ================================================================
+   LOAD ANIMATIONS
+================================================================ */
+.fade-in { opacity: 0; transform: translateY(8px); animation: fadeIn 700ms var(--ease) forwards; }
+.fade-in.d1 { animation-delay: 60ms; }
+.fade-in.d2 { animation-delay: 140ms; }
+.fade-in.d3 { animation-delay: 230ms; }
+.fade-in.d4 { animation-delay: 320ms; }
+@keyframes fadeIn { to { opacity: 1; transform: none; } }
+
+/* Mobile tweaks */
+@media (max-width: 640px) {
+  .shell { padding: 28px 18px 60px; }
+  .header { margin-bottom: 24px; padding-bottom: 20px; }
+  .controls { padding: 18px 16px; }
+  .plot-wrap { min-height: 380px; }
+  canvas#plot { min-height: 364px; }
+}
+</style>
+</head>
+<body>
+
+<div class="bg-layer bg-grid"></div>
+<div class="bg-layer bg-glow"></div>
+<div class="bg-layer bg-noise"></div>
+
+<div class="shell">
+
+  <header class="header">
+    <div class="eyebrow fade-in">Interactive Mathematics</div>
+    <h1 class="title fade-in d1">The Calculus <em>Visualizer</em></h1>
+    <p class="subtitle fade-in d2">
+      Type any function of <em>x</em>. Drag the slider to watch the tangent sweep along the curve. Shade a region to see its signed area, computed in real time.
+    </p>
+  </header>
+
+  <section class="function-bar fade-in d3">
+    <div class="fn-card" id="fnCard">
+      <label class="fn-label" for="fnInput">Function</label>
+      <div class="fn-input-row">
+        <span class="lhs"><span class="x">f</span>(<span class="x">x</span>) =</span>
+        <input id="fnInput" class="fn-input" type="text" value="sin(x)" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off">
+      </div>
+      <div class="fn-error" id="fnError"></div>
+    </div>
+
+    <div class="presets">
+      <button class="chip" data-expr="x^2">x²</button>
+      <button class="chip" data-expr="x^3 - 3x">x³ − 3x</button>
+      <button class="chip" data-expr="sin(x)">sin(x)</button>
+      <button class="chip" data-expr="exp(-x^2/2)">e^(−x²/2)</button>
+      <button class="chip" data-expr="1/(1+x^2)">1/(1+x²)</button>
+      <button class="chip" data-expr="sin(x)/x">sin(x)/x</button>
+      <button class="chip" data-expr="sqrt(x)">√x</button>
+      <button class="chip" data-expr="log(x)">ln(x)</button>
+    </div>
+  </section>
+
+  <section class="workspace fade-in d4">
+    <div class="plot-wrap">
+      <canvas id="plot"></canvas>
+    </div>
+
+    <aside class="controls">
+      <div class="ctrl-section" data-color="tangent">
+        <div class="ctrl-title">
+          <span><span class="dot"></span>Tangent Line</span>
+          <label class="toggle">
+            <input type="checkbox" id="showTangent" checked>
+            <span class="track"></span><span class="thumb"></span>
+          </label>
+        </div>
+        <div class="slider-row">
+          <span class="lbl">x₀</span>
+          <input type="range" class="sl sl-tangent" id="tangentX" min="-5" max="5" step="0.01" value="1">
+          <span class="val" id="tangentXVal">1.00</span>
+        </div>
+      </div>
+
+      <div class="ctrl-section" data-color="area">
+        <div class="ctrl-title">
+          <span><span class="dot"></span>Area Under Curve</span>
+          <label class="toggle">
+            <input type="checkbox" id="showArea" checked>
+            <span class="track"></span><span class="thumb"></span>
+          </label>
+        </div>
+        <div class="slider-row">
+          <span class="lbl">a</span>
+          <input type="range" class="sl sl-area" id="aVal" min="-10" max="10" step="0.05" value="-2">
+          <span class="val" id="aValDisp">−2.00</span>
+        </div>
+        <div class="slider-row">
+          <span class="lbl">b</span>
+          <input type="range" class="sl sl-area" id="bVal" min="-10" max="10" step="0.05" value="2">
+          <span class="val" id="bValDisp">2.00</span>
+        </div>
+      </div>
+
+      <div class="ctrl-section" data-color="view">
+        <div class="ctrl-title">
+          <span><span class="dot"></span>View</span>
+        </div>
+        <div class="slider-row">
+          <span class="lbl">min</span>
+          <input type="range" class="sl sl-view" id="xMinSl" min="-20" max="0" step="0.5" value="-5">
+          <span class="val" id="xMinValDisp">−5.0</span>
+        </div>
+        <div class="slider-row">
+          <span class="lbl">max</span>
+          <input type="range" class="sl sl-view" id="xMaxSl" min="0" max="20" step="0.5" value="5">
+          <span class="val" id="xMaxValDisp">5.0</span>
+        </div>
+      </div>
+
+      <div class="readout">
+        <span class="lbl">Symbolic Derivative</span>
+        <div class="eq" id="derivEq"></div>
+        <div class="kv">
+          <span class="k"><em>f</em>(x₀)</span>
+          <span class="v-fn" id="fx0Val">—</span>
+          <span class="k"><em>f′</em>(x₀)</span>
+          <span class="v-tan" id="dfx0Val">—</span>
+          <span class="k">∫<sub><span id="aReadout">−2.00</span></sub><sup><span id="bReadout">2.00</span></sup> <em>f</em> d<em>x</em></span>
+          <span class="v-int" id="integralVal">—</span>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <footer class="footer">
+    <div>Symbolic differentiation via <em>math.js</em> · Numerical integration via Simpson's rule</div>
+    <div>Built with care · <span style="color:var(--fn)">●</span> curve · <span style="color:var(--tan)">●</span> tangent · <span style="color:var(--area)">●</span> area</div>
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mathjs@13.0.3/lib/browser/math.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+<script>
+/* ==================================================================
+   Calculus Visualizer — main application
+   ================================================================== */
+(function () {
+  "use strict";
+
+  // ---- DOM ------------------------------------------------------
+  const $ = id => document.getElementById(id);
+  const canvas   = $("plot");
+  const ctx      = canvas.getContext("2d");
+  const fnCard   = $("fnCard");
+  const fnInput  = $("fnInput");
+  const fnError  = $("fnError");
+  const tangentX = $("tangentX");
+  const showTangent = $("showTangent");
+  const aVal = $("aVal"), bVal = $("bVal");
+  const showArea = $("showArea");
+  const xMinSl = $("xMinSl"), xMaxSl = $("xMaxSl");
+  const derivEq = $("derivEq");
+
+  // ---- Palette (must match CSS variables) -----------------------
+  const P = {
+    bg:     "#0A0D12",
+    axis:   "#5a6170",
+    grid:   "#232832",
+    gridSoft: "#1a1e26",
+    tickTxt: "#6a7283",
+    fn:     "#58C4DD",
+    fnGlow: "rgba(88,196,221,0.28)",
+    tan:    "#F0AC5F",
+    area:   "#83C167",
+    point:  "#FC6255",
+  };
+
+  // ---- State ----------------------------------------------------
+  let state = {
+    src: fnInput.value,
+    fNode: null,       // math.js parsed node
+    dNode: null,       // derivative node
+    fFn:   null,       // compiled f
+    dFn:   null,       // compiled f'
+    fLatex: "",
+    dLatex: "",
+    err:   null,
+  };
+
+  // ---- Parse ----------------------------------------------------
+  // Normalize user text so "2x" -> "2*x", "x^2" works natively in mathjs.
+  function normalize(s) {
+    // insert * between digit/closing-paren and x or (
+    return s
+      .replace(/(\d)\s*([a-zA-Z(])/g, "$1*$2")      // 2x, 3sin(x), 4(x+1)
+      .replace(/\)\s*\(/g, ")*(")                   // (x)(x+1)
+      .replace(/\)\s*([a-zA-Z])/g, ")*$1");         // (x+1)x -> (x+1)*x
+  }
+
+  function parseFn(src) {
+    const text = normalize(src.trim());
+    if (!text) throw new Error("empty expression");
+    const node = math.parse(text);
+    // symbolic derivative (exact)
+    const dNode = math.derivative(node, "x");
+    const fFn = node.compile();
+    const dFn = dNode.compile();
+    // test evaluate at a safe point to catch some errors early
+    fFn.evaluate({ x: 1 });
+    return { node, dNode, fFn, dFn };
+  }
+
+  function setFunction(src) {
+    try {
+      const r = parseFn(src);
+      state.src = src;
+      state.fNode = r.node; state.dNode = r.dNode;
+      state.fFn   = r.fFn;   state.dFn = r.dFn;
+      state.fLatex = r.node.toTex({ parenthesis: "auto", implicit: "show" });
+      // Try to simplify the derivative for a cleaner display.
+      // math.simplify can throw on weird expressions — fall back to raw.
+      let dLatexNode = r.dNode;
+      try { dLatexNode = math.simplify(r.dNode); } catch { /* keep raw */ }
+      state.dLatex = dLatexNode.toTex({ parenthesis: "auto", implicit: "show" });
+      state.err = null;
+      fnCard.classList.remove("error");
+      fnError.textContent = "";
+      renderDerivEq();
+      requestDraw();
+    } catch (e) {
+      state.err = e.message || String(e);
+      fnCard.classList.add("error");
+      fnError.textContent = "Couldn't parse that. Try something like x^2, sin(x), or 1/(1+x^2).";
+    }
+  }
+
+  // ---- Safe evaluate --------------------------------------------
+  function evalAt(fn, x) {
+    try {
+      const y = fn.evaluate({ x });
+      if (typeof y !== "number" || !isFinite(y)) return NaN;
+      return y;
+    } catch { return NaN; }
+  }
+
+  // ---- KaTeX render ---------------------------------------------
+  function renderDerivEq() {
+    try {
+      katex.render(
+        `\\dfrac{d}{dx}\\,${state.fLatex} \\;=\\; ${state.dLatex}`,
+        derivEq, { throwOnError: false, displayMode: false, output: "html" }
+      );
+    } catch {
+      derivEq.textContent = state.dLatex || "";
+    }
+  }
+
+  // ---- High-DPI canvas sizing -----------------------------------
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width  = Math.round(rect.width  * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // ---- Auto y-range (robust percentile-based) -------------------
+  function autoYRange(ys) {
+    const valid = ys.filter(v => isFinite(v)).sort((a, b) => a - b);
+    if (valid.length === 0) return [-5, 5];
+    if (valid.length < 10) return [valid[0], valid[valid.length - 1]];
+    const pct = p => valid[Math.min(valid.length - 1, Math.max(0, Math.floor(p * (valid.length - 1))))];
+    let lo = pct(0.04), hi = pct(0.96);
+    const med = pct(0.5);
+    const iqr = pct(0.75) - pct(0.25);
+    if (iqr > 0) { lo = Math.max(lo, med - 6*iqr); hi = Math.min(hi, med + 6*iqr); }
+    if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.15 + 0.2;
+    return [lo - pad, hi + pad];
+  }
+
+  // ---- "Nice" tick spacing (like d3.ticks) ----------------------
+  function niceTicks(min, max, target = 8) {
+    const range = max - min;
+    const step0 = range / target;
+    const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+    const norm = step0 / mag;
+    let step;
+    if      (norm < 1.5) step = 1 * mag;
+    else if (norm < 3)   step = 2 * mag;
+    else if (norm < 7)   step = 5 * mag;
+    else                 step = 10 * mag;
+    const ticks = [];
+    const start = Math.ceil(min / step) * step;
+    for (let v = start; v <= max + step * 0.5; v += step) {
+      ticks.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+    }
+    return { step, ticks };
+  }
+
+  function fmtTick(v, step) {
+    if (v === 0) return "0";
+    const digits = Math.max(0, -Math.floor(Math.log10(step)) + (step < 1 ? 0 : 0));
+    const s = v.toFixed(digits);
+    return s.replace("-", "−"); // proper minus glyph
+  }
+
+  // ---- Simpson's rule -------------------------------------------
+  function simpson(fn, a, b, n = 400) {
+    if (a === b) return 0;
+    const sign = a < b ? 1 : -1;
+    if (a > b) { const t = a; a = b; b = t; }
+    n = Math.max(2, n - (n % 2));  // ensure even
+    const h = (b - a) / n;
+    const fa = evalAt(fn, a), fb = evalAt(fn, b);
+    if (!isFinite(fa) || !isFinite(fb)) return NaN;
+    let sum = fa + fb;
+    for (let i = 1; i < n; i++) {
+      const x = a + i * h;
+      const y = evalAt(fn, x);
+      if (!isFinite(y)) return NaN;
+      sum += (i % 2 === 0 ? 2 : 4) * y;
+    }
+    return sign * (h / 3) * sum;
+  }
+
+  // ---- Draw -----------------------------------------------------
+  let _drawScheduled = false;
+  function requestDraw() {
+    if (_drawScheduled) return;
+    _drawScheduled = true;
+    requestAnimationFrame(() => { _drawScheduled = false; draw(); });
+  }
+
+  function draw() {
+    if (!state.fFn) return;
+
+    const W = canvas.clientWidth;
+    const H = canvas.clientHeight;
+    if (W === 0 || H === 0) return;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const margin = { t: 24, r: 24, b: 36, l: 52 };
+    const pw = W - margin.l - margin.r;
+    const ph = H - margin.t - margin.b;
+
+    // domain
+    let xMin = +xMinSl.value, xMax = +xMaxSl.value;
+    if (xMax - xMin < 0.5) xMax = xMin + 0.5;
+
+    // sample
+    const N = Math.max(200, Math.min(1800, Math.round(pw * 2)));
+    const xs = new Float64Array(N + 1);
+    const ys = new Float64Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      const x = xMin + (i / N) * (xMax - xMin);
+      xs[i] = x;
+      ys[i] = evalAt(state.fFn, x);
+    }
+
+    // y range
+    const [yMin, yMax] = autoYRange(Array.from(ys));
+
+    const xToPx = x => margin.l + (x - xMin) / (xMax - xMin) * pw;
+    const yToPx = y => margin.t + (yMax - y) / (yMax - yMin) * ph;
+
+    // --- plot background (subtle) ---
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.008)";
+    ctx.fillRect(margin.l, margin.t, pw, ph);
+    ctx.restore();
+
+    // --- ticks & gridlines ---
+    const xt = niceTicks(xMin, xMax, 9);
+    const yt = niceTicks(yMin, yMax, 7);
+
+    // minor grid
+    ctx.save();
+    ctx.strokeStyle = P.gridSoft;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (const t of xt.ticks) {
+      const px = xToPx(t);
+      const hstep = xt.step / 5;
+      for (let k = 1; k < 5; k++) {
+        const mx = xToPx(t - hstep * k);
+        if (mx > margin.l && mx < margin.l + pw) {
+          ctx.moveTo(mx, margin.t); ctx.lineTo(mx, margin.t + ph);
+        }
+      }
+    }
+    for (const t of yt.ticks) {
+      const py = yToPx(t);
+      const vstep = yt.step / 5;
+      for (let k = 1; k < 5; k++) {
+        const my = yToPx(t - vstep * k);
+        if (my > margin.t && my < margin.t + ph) {
+          ctx.moveTo(margin.l, my); ctx.lineTo(margin.l + pw, my);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // major grid
+    ctx.save();
+    ctx.strokeStyle = P.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const t of xt.ticks) {
+      const px = xToPx(t);
+      ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph);
+    }
+    for (const t of yt.ticks) {
+      const py = yToPx(t);
+      ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // axes through origin (highlighted)
+    ctx.save();
+    ctx.strokeStyle = P.axis;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (xMin < 0 && xMax > 0) {
+      const px = xToPx(0);
+      ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph);
+    }
+    if (yMin < 0 && yMax > 0) {
+      const py = yToPx(0);
+      ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // tick labels
+    ctx.save();
+    ctx.fillStyle = P.tickTxt;
+    ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const t of xt.ticks) {
+      const px = xToPx(t);
+      ctx.fillText(fmtTick(t, xt.step), px, margin.t + ph + 6);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const t of yt.ticks) {
+      const py = yToPx(t);
+      ctx.fillText(fmtTick(t, yt.step), margin.l - 8, py);
+    }
+    ctx.restore();
+
+    // --- AREA FILL ---
+    let integralValue = NaN;
+    if (showArea.checked) {
+      let a = +aVal.value, b = +bVal.value;
+      if (a > b) { const t = a; a = b; b = t; }
+      const a_ = Math.max(a, xMin), b_ = Math.min(b, xMax);
+      if (b_ > a_) {
+        const M = Math.max(40, Math.round((b_ - a_) / (xMax - xMin) * N));
+        ctx.save();
+        ctx.fillStyle = "rgba(131, 193, 103, 0.18)";
+        ctx.beginPath();
+        const y0px = yToPx(0);
+        ctx.moveTo(xToPx(a_), y0px);
+        let pathStarted = false;
+        for (let i = 0; i <= M; i++) {
+          const x = a_ + (i / M) * (b_ - a_);
+          const y = evalAt(state.fFn, x);
+          if (isFinite(y)) {
+            ctx.lineTo(xToPx(x), yToPx(y));
+            pathStarted = true;
+          } else if (pathStarted) {
+            ctx.lineTo(xToPx(x), y0px);
+          }
+        }
+        ctx.lineTo(xToPx(b_), y0px);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // bound verticals
+        ctx.save();
+        ctx.strokeStyle = "rgba(131, 193, 103, 0.7)";
+        ctx.lineWidth = 1.4;
+        for (const bnd of [a_, b_]) {
+          const y = evalAt(state.fFn, bnd);
+          if (isFinite(y)) {
+            ctx.beginPath();
+            ctx.moveTo(xToPx(bnd), yToPx(0));
+            ctx.lineTo(xToPx(bnd), yToPx(y));
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+      // numeric integral over the full [a,b] (even if partly off-screen)
+      integralValue = simpson(state.fFn, a, b, 600);
+    }
+
+    // --- FUNCTION CURVE (glow + line, with NaN gap + asymptote handling) ---
+    // Heuristic for detecting discontinuities between adjacent samples:
+    // a sign flip combined with a jump larger than half the y-range indicates
+    // an odd singularity (e.g. tan, 1/x) between the two samples. Break the
+    // path there to avoid drawing a bogus near-vertical connector.
+    const jumpThresh = (yMax - yMin) * 0.5;
+    function tracePath() {
+      let started = false;
+      let prevY = null;
+      for (let i = 0; i <= N; i++) {
+        const y = ys[i];
+        if (!isFinite(y)) { started = false; prevY = null; continue; }
+        if (prevY !== null &&
+            Math.sign(y) !== Math.sign(prevY) &&
+            Math.abs(y - prevY) > jumpThresh) {
+          started = false;           // force a fresh moveTo — breaks the asymptote
+        }
+        const py = yToPx(y);
+        const px = xToPx(xs[i]);
+        if (!started) { ctx.moveTo(px, py); started = true; }
+        else          { ctx.lineTo(px, py); }
+        prevY = y;
+      }
+    }
+    // clip to plot area
+    ctx.save();
+    ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+
+    // glow
+    ctx.strokeStyle = P.fnGlow;
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath(); tracePath(); ctx.stroke();
+
+    // main line
+    ctx.strokeStyle = P.fn;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath(); tracePath(); ctx.stroke();
+    ctx.restore();
+
+    // --- TANGENT LINE ---
+    let fx0 = NaN, dfx0 = NaN;
+    if (showTangent.checked) {
+      const x0 = +tangentX.value;
+      fx0  = evalAt(state.fFn, x0);
+      dfx0 = evalAt(state.dFn, x0);
+      if (isFinite(fx0) && isFinite(dfx0)) {
+        const span = (xMax - xMin) * 0.42;
+        const x1 = x0 - span, y1 = fx0 + dfx0 * (x1 - x0);
+        const x2 = x0 + span, y2 = fx0 + dfx0 * (x2 - x0);
+        ctx.save();
+        ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+        ctx.strokeStyle = P.tan;
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath();
+        ctx.moveTo(xToPx(x1), yToPx(y1));
+        ctx.lineTo(xToPx(x2), yToPx(y2));
+        ctx.stroke();
+        ctx.restore();
+
+        // point marker
+        if (isFinite(fx0)) {
+          ctx.save();
+          // outer ring (bg separation)
+          ctx.fillStyle = P.bg;
+          ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 7, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = P.point;
+          ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 5, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    // --- border of the plot frame ---
+    ctx.save();
+    ctx.strokeStyle = P.grid;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(margin.l + 0.5, margin.t + 0.5, pw - 1, ph - 1);
+    ctx.restore();
+
+    // --- update numeric readouts ---
+    $("fx0Val").textContent  = isFinite(fx0)  ? fmtNum(fx0)  : "—";
+    $("dfx0Val").textContent = isFinite(dfx0) ? fmtNum(dfx0) : "—";
+    $("integralVal").textContent = isFinite(integralValue) ? fmtNum(integralValue) : "—";
+  }
+
+  function fmtNum(v) {
+    if (!isFinite(v)) return "—";
+    const av = Math.abs(v);
+    if (av < 1e-4 && av !== 0) return v.toExponential(2).replace("-", "−");
+    if (av >= 1e4)              return v.toExponential(2).replace("-", "−");
+    return v.toFixed(4).replace("-", "−");
+  }
+
+  function fmtSigned(v, d = 2) {
+    return (v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
+  }
+
+  // ---- Wire up --------------------------------------------------
+  fnInput.addEventListener("input", e => setFunction(e.target.value));
+  document.querySelectorAll(".chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.expr;
+      fnInput.value = code;
+      setFunction(code);
+    });
+  });
+
+  tangentX.addEventListener("input", () => {
+    $("tangentXVal").textContent = fmtSigned(+tangentX.value);
+    requestDraw();
+  });
+  showTangent.addEventListener("change", requestDraw);
+
+  function updateAreaReadouts() {
+    $("aValDisp").textContent = fmtSigned(+aVal.value);
+    $("bValDisp").textContent = fmtSigned(+bVal.value);
+    $("aReadout").textContent = fmtSigned(+aVal.value);
+    $("bReadout").textContent = fmtSigned(+bVal.value);
+  }
+  aVal.addEventListener("input", () => { updateAreaReadouts(); requestDraw(); });
+  bVal.addEventListener("input", () => { updateAreaReadouts(); requestDraw(); });
+  showArea.addEventListener("change", requestDraw);
+
+  function updateViewReadouts() {
+    $("xMinValDisp").textContent = fmtSigned(+xMinSl.value, 1);
+    $("xMaxValDisp").textContent = fmtSigned(+xMaxSl.value, 1);
+  }
+  xMinSl.addEventListener("input", () => { updateViewReadouts(); requestDraw(); });
+  xMaxSl.addEventListener("input", () => { updateViewReadouts(); requestDraw(); });
+
+  window.addEventListener("resize", () => { resizeCanvas(); requestDraw(); });
+
+  // ---- Init -----------------------------------------------------
+  resizeCanvas();
+  setFunction(fnInput.value);
+  updateAreaReadouts();
+  updateViewReadouts();
+  $("tangentXVal").textContent = fmtSigned(+tangentX.value);
+
+  // Keyboard shortcuts: arrow keys on tangent slider stepping, etc.
+  window.addEventListener("keydown", e => {
+    if (e.target === fnInput) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const d = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 0.01 : 0.1);
+      tangentX.value = Math.min(+tangentX.max, Math.max(+tangentX.min, +tangentX.value + d));
+      $("tangentXVal").textContent = fmtSigned(+tangentX.value);
+      requestDraw();
+      e.preventDefault();
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
