@@ -1,3 +1,7 @@
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -36,6 +40,8 @@
   --area:      #83C167;  /* area under curve */
   --point:     #FC6255;  /* point marker */
   --accent:    #9A72AC;  /* subtle accents */
+  --extrema:   #FFCD3C;  /* local max / min */
+  --inflect:   #5EE0CB;  /* inflection points */
 
   /* Type */
   --serif: "Fraunces", "Cambria", Georgia, "Times New Roman", serif;
@@ -328,6 +334,7 @@ canvas#plot {
 .ctrl-section[data-color="tangent"] .dot { background: var(--tan); }
 .ctrl-section[data-color="area"]    .dot { background: var(--area); }
 .ctrl-section[data-color="view"]    .dot { background: var(--accent); }
+.ctrl-section[data-color="extrema"] .dot { background: var(--extrema); }
 
 /* Toggle switch */
 .toggle {
@@ -355,6 +362,7 @@ canvas#plot {
 .toggle input:checked ~ .thumb { left: 16px; background: currentColor; }
 .ctrl-section[data-color="tangent"] .toggle { color: var(--tan); }
 .ctrl-section[data-color="area"]    .toggle { color: var(--area); }
+.ctrl-section[data-color="extrema"] .toggle { color: var(--extrema); }
 
 /* Slider */
 .slider-row {
@@ -410,6 +418,43 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
 .sl-tangent { --thumb: var(--tan); --thumb-glow: rgba(240, 172, 95, 0.4); }
 .sl-area    { --thumb: var(--area); --thumb-glow: rgba(131, 193, 103, 0.4); }
 .sl-view    { --thumb: var(--accent); --thumb-glow: rgba(154, 114, 172, 0.35); }
+
+/* Critical-points list */
+.extrema-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  max-height: 130px;
+  overflow-y: auto;
+}
+.extrema-list .row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.extrema-list .row .tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.extrema-list .row.max .tag,
+.extrema-list .row.min .tag { color: var(--extrema); }
+.extrema-list .row.inflect .tag { color: var(--inflect); }
+.extrema-list .row .pt {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.extrema-list .empty {
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 4px 0;
+}
 
 /* Readout panel */
 .readout {
@@ -526,11 +571,17 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
       <button class="chip" data-expr="x^2">x²</button>
       <button class="chip" data-expr="x^3 - 3x">x³ − 3x</button>
       <button class="chip" data-expr="sin(x)">sin(x)</button>
+      <button class="chip" data-expr="tan(x)">tan(x)</button>
       <button class="chip" data-expr="exp(-x^2/2)">e^(−x²/2)</button>
+      <button class="chip" data-expr="1/x">1/x</button>
       <button class="chip" data-expr="1/(1+x^2)">1/(1+x²)</button>
       <button class="chip" data-expr="sin(x)/x">sin(x)/x</button>
       <button class="chip" data-expr="sqrt(x)">√x</button>
-      <button class="chip" data-expr="log(x)">ln(x)</button>
+      <button class="chip" data-expr="ln(x)">ln(x)</button>
+      <button class="chip" data-expr="arctan(x)">arctan(x)</button>
+      <button class="chip" data-expr="tanh(x)">tanh(x)</button>
+      <button class="chip" data-expr="|x|">|x|</button>
+      <button class="chip" data-expr="floor(x)">⌊x⌋</button>
     </div>
   </section>
 
@@ -575,18 +626,31 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
         </div>
       </div>
 
+      <div class="ctrl-section" data-color="extrema">
+        <div class="ctrl-title">
+          <span><span class="dot"></span>Critical Points</span>
+          <label class="toggle">
+            <input type="checkbox" id="showExtrema" checked>
+            <span class="track"></span><span class="thumb"></span>
+          </label>
+        </div>
+        <div class="extrema-list" id="extremaList">
+          <div class="empty">—</div>
+        </div>
+      </div>
+
       <div class="ctrl-section" data-color="view">
         <div class="ctrl-title">
           <span><span class="dot"></span>View</span>
         </div>
         <div class="slider-row">
           <span class="lbl">min</span>
-          <input type="range" class="sl sl-view" id="xMinSl" min="-20" max="0" step="0.5" value="-5">
+          <input type="range" class="sl sl-view" id="xMinSl" min="-100" max="0" step="0.5" value="-10">
           <span class="val" id="xMinValDisp">−5.0</span>
         </div>
         <div class="slider-row">
           <span class="lbl">max</span>
-          <input type="range" class="sl sl-view" id="xMaxSl" min="0" max="20" step="0.5" value="5">
+          <input type="range" class="sl sl-view" id="xMaxSl" min="0" max="100" step="0.5" value="10">
           <span class="val" id="xMaxValDisp">5.0</span>
         </div>
       </div>
@@ -636,94 +700,524 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
   const showArea = $("showArea");
   const xMinSl = $("xMinSl"), xMaxSl = $("xMaxSl");
   const derivEq = $("derivEq");
+  const readoutLbl = derivEq && derivEq.previousElementSibling;
 
-  // ---- Palette (must match CSS variables) -----------------------
+  // ---- Palette --------------------------------------------------
   const P = {
-    bg:     "#0A0D12",
-    axis:   "#5a6170",
-    grid:   "#232832",
-    gridSoft: "#1a1e26",
-    tickTxt: "#6a7283",
-    fn:     "#58C4DD",
-    fnGlow: "rgba(88,196,221,0.28)",
-    tan:    "#F0AC5F",
-    area:   "#83C167",
-    point:  "#FC6255",
+    bg:        "#0A0D12",
+    axis:      "#5a6170",
+    grid:      "#232832",
+    gridSoft:  "#1a1e26",
+    tickTxt:   "#6a7283",
+    fn:        "#58C4DD",
+    fnGlow:    "rgba(88,196,221,0.28)",
+    tan:       "#F0AC5F",
+    area:      "#83C167",
+    point:     "#FC6255",
+    asymptote: "rgba(252, 98, 85, 0.6)",
+    asyText:   "rgba(252, 98, 85, 0.95)",
+    horizAsy:  "rgba(192, 132, 220, 0.6)",
+    horizText: "rgba(192, 132, 220, 0.95)",
+    extrema:   "#FFCD3C",
+    extremaSoft: "rgba(255, 205, 60, 0.35)",
+    trace:     "rgba(232, 232, 232, 0.55)",
+    traceFill: "rgba(20, 25, 32, 0.95)",
   };
 
   // ---- State ----------------------------------------------------
   let state = {
     src: fnInput.value,
-    fNode: null,       // math.js parsed node
-    dNode: null,       // derivative node
-    fFn:   null,       // compiled f
-    dFn:   null,       // compiled f'
-    fLatex: "",
-    dLatex: "",
-    err:   null,
+    fNode: null, dNode: null, ddNode: null,
+    fFn: null, dFn: null, ddFn: null,
+    fLatex: "", dLatex: "",
+    dType: "symbolic",   // "symbolic" or "numerical"
+    ddType: "symbolic",
+    err: null,
+    vAsymptotes: [],
+    hAsymptotes: [],
+    extrema: [],         // [{x, y, type: "max"|"min"}]
+    hover: { active: false, x: 0, yPx: 0 },  // trace cursor (yPx is canvas-y in CSS px)
   };
 
-  // ---- Parse ----------------------------------------------------
-  // Normalize user text so "2x" -> "2*x", "x^2" works natively in mathjs.
-  function normalize(s) {
-    // insert * between digit/closing-paren and x or (
-    return s
-      .replace(/(\d)\s*([a-zA-Z(])/g, "$1*$2")      // 2x, 3sin(x), 4(x+1)
-      .replace(/\)\s*\(/g, ")*(")                   // (x)(x+1)
-      .replace(/\)\s*([a-zA-Z])/g, ")*$1");         // (x+1)x -> (x+1)*x
+  // ---- Layout constants ----------------------------------------
+  // Hoisted so pointer-event handlers (trace mode) can use them too.
+  const MARGIN = { t: 24, r: 24, b: 36, l: 56 };
+
+  // ---- View slider mapping --------------------------------------
+  // Slider value s ∈ [-100, 100] maps to view x ∈ [-500, 500]
+  // via quadratic: x = sign(s) · (|s|/100)² · 500
+  // Result: fine control near zero, broad reach toward extremes.
+  function sliderToX(s) {
+    const sign = s < 0 ? -1 : 1;
+    const m = Math.abs(s);
+    return sign * (m / 100) * (m / 100) * 500;
+  }
+  function xToSlider(x) {
+    const sign = x < 0 ? -1 : 1;
+    return sign * 100 * Math.sqrt(Math.abs(x) / 500);
   }
 
+  // ---- Input normalization --------------------------------------
+  // Convert user-friendly syntax into something math.js understands.
+  function normalize(s) {
+    return s
+      // Unicode operators / symbols
+      .replace(/\u00d7/g, "*")          // ×
+      .replace(/\u00f7/g, "/")          // ÷
+      .replace(/\u2212/g, "-")          // −
+      .replace(/\u00b2/g, "^2")         // ²
+      .replace(/\u00b3/g, "^3")         // ³
+      .replace(/\u221a/g, "sqrt")       // √
+      .replace(/\u03c0/g, "pi")         // π
+      // |x| → abs(x)  (single-level absolute value)
+      .replace(/\|([^|]+)\|/g, "abs($1)")
+      // Function-name aliases (math.js uses the prefix-less form)
+      .replace(/\barcsinh\b/gi, "asinh")
+      .replace(/\barccosh\b/gi, "acosh")
+      .replace(/\barctanh\b/gi, "atanh")
+      .replace(/\barsinh\b/gi, "asinh")
+      .replace(/\barcosh\b/gi, "acosh")
+      .replace(/\bartanh\b/gi, "atanh")
+      .replace(/\barcsin\b/gi, "asin")
+      .replace(/\barccos\b/gi, "acos")
+      .replace(/\barctan\b/gi, "atan")
+      .replace(/\bln\b/gi, "log")        // math.js: log == natural log
+      .replace(/\blg\b/gi, "log10")
+      // Implicit multiplication: 2x → 2*x, 3sin(x) → 3*sin(x), 4(x+1) → 4*(x+1)
+      .replace(/(\d)\s*([a-zA-Z(])/g, "$1*$2")
+      // (a)(b) → (a)*(b)
+      .replace(/\)\s*\(/g, ")*(")
+      // (a)x → (a)*x
+      .replace(/\)\s*([a-zA-Z])/g, ")*$1");
+  }
+
+  // ---- Parse with derivative fallback ---------------------------
   function parseFn(src) {
     const text = normalize(src.trim());
     if (!text) throw new Error("empty expression");
     const node = math.parse(text);
-    // symbolic derivative (exact)
-    const dNode = math.derivative(node, "x");
     const fFn = node.compile();
-    const dFn = dNode.compile();
-    // test evaluate at a safe point to catch some errors early
-    fFn.evaluate({ x: 1 });
-    return { node, dNode, fFn, dFn };
+    // Test eval at a safe value to surface immediate errors.
+    const testY = fFn.evaluate({ x: 1 });
+    if (testY === undefined) throw new Error("evaluation produced no value");
+
+    // Try symbolic differentiation. If math.js cannot differentiate
+    // (floor, ceil, mod, sign, etc.), fall back to numerical.
+    let dNode = null;
+    let dFn   = null;
+    let dType = "symbolic";
+    try {
+      dNode = math.derivative(node, "x");
+      try { dNode = math.simplify(dNode); } catch { /* keep raw */ }
+      dFn = dNode.compile();
+    } catch (e) {
+      dType = "numerical";
+      const numericDeriv = (x) => {
+        // Compare central difference at two step sizes. If they disagree
+        // wildly (like at floor's integer jumps), the derivative is
+        // undefined here — return NaN rather than a meaningless huge value.
+        const h1 = Math.max(1e-6, Math.abs(x) * 1e-6) || 1e-6;
+        const h2 = h1 * 0.1;
+        let yp1, ym1, yp2, ym2;
+        try {
+          yp1 = fFn.evaluate({ x: x + h1 });
+          ym1 = fFn.evaluate({ x: x - h1 });
+          yp2 = fFn.evaluate({ x: x + h2 });
+          ym2 = fFn.evaluate({ x: x - h2 });
+        } catch { return NaN; }
+        for (const v of [yp1, ym1, yp2, ym2]) {
+          if (typeof v !== "number" || !isFinite(v)) return NaN;
+        }
+        const d1 = (yp1 - ym1) / (2 * h1);
+        const d2 = (yp2 - ym2) / (2 * h2);
+        const refMag = Math.max(Math.abs(d1), Math.abs(d2));
+        // At a true discontinuity, halving h roughly multiplies |d| by 10.
+        if (refMag > 1e3 && Math.abs(d1 - d2) / refMag > 0.5) return NaN;
+        return d2;
+      };
+      dFn = { evaluate: ({ x }) => numericDeriv(x) };
+    }
+
+    // ---- Second derivative ----
+    let ddNode = null;
+    let ddFn = null;
+    let ddType = "symbolic";
+    if (dNode) {
+      try {
+        ddNode = math.derivative(dNode, "x");
+        try { ddNode = math.simplify(ddNode); } catch { /* keep raw */ }
+        ddFn = ddNode.compile();
+      } catch {
+        ddNode = null;
+        ddType = "numerical";
+      }
+    } else {
+      ddType = "numerical";
+    }
+    if (!ddFn) {
+      // Numerical second derivative via 5-point stencil — more stable than
+      // simple (f(x+h) - 2f(x) + f(x-h)) / h² near rapidly varying regions.
+      const numericSecond = (x) => {
+        const h = Math.max(1e-4, Math.abs(x) * 1e-4);
+        let a, b, c, d, e;
+        try {
+          a = fFn.evaluate({ x: x - 2*h });
+          b = fFn.evaluate({ x: x - h });
+          c = fFn.evaluate({ x: x });
+          d = fFn.evaluate({ x: x + h });
+          e = fFn.evaluate({ x: x + 2*h });
+        } catch { return NaN; }
+        for (const v of [a,b,c,d,e]) {
+          if (typeof v !== "number" || !isFinite(v)) return NaN;
+        }
+        // 5-point stencil: f''(x) ≈ (-a + 16b - 30c + 16d - e) / (12h²)
+        const dd = (-a + 16*b - 30*c + 16*d - e) / (12 * h * h);
+        if (!isFinite(dd) || Math.abs(dd) > 1e10) return NaN;
+        return dd;
+      };
+      ddFn = { evaluate: ({ x }) => numericSecond(x) };
+    }
+
+    return { node, dNode, ddNode, fFn, dFn, ddFn, dType, ddType };
   }
 
+  // ---- Safe evaluator (handles complex returns, errors) ---------
+  function evalAt(fn, x) {
+    let y;
+    try { y = fn.evaluate({ x }); } catch { return NaN; }
+    // math.js returns Complex objects for things like asin(2), sqrt(-1).
+    // Treat any non-real result as NaN for plotting.
+    if (typeof y !== "number" || !isFinite(y)) return NaN;
+    return y;
+  }
+
+  // ---- Bisect to find root of g in [xL, xR] (g(xL)·g(xR) ≤ 0) ----
+  function bisectRoot(g, xL, xR, gL, gR) {
+    // If a sample lands exactly on the root, return it directly.
+    // Without this guard, bisection drifts away from the zero endpoint.
+    if (gL === 0) return xL;
+    if (gR === 0) return xR;
+    for (let k = 0; k < 50; k++) {
+      const xm = 0.5 * (xL + xR);
+      const gm = g(xm);
+      if (!isFinite(gm)) return null;
+      if (gm === 0) return xm;
+      if ((gL <= 0 && gm <= 0) || (gL >= 0 && gm >= 0)) {
+        xL = xm; gL = gm;
+      } else {
+        xR = xm; gR = gm;
+      }
+      if (Math.abs(xR - xL) < 1e-10) break;
+    }
+    return 0.5 * (xL + xR);
+  }
+
+  // ---- Critical points (where f' = 0 with sign change) ----------
+  // Returns extrema [{x, y, type}] where type is "max", "min", or "saddle".
+  // We detect by sign change in f' between dense samples, refine via
+  // bisection, then classify with f'' (or sign of f' on either side).
+  function findCriticalPoints(fFn, dFn, ddFn, xLo, xHi) {
+    const N = 800;
+    const xs = new Array(N + 1);
+    const dys = new Array(N + 1);
+    for (let i = 0; i <= N; i++) {
+      const x = xLo + (i / N) * (xHi - xLo);
+      xs[i] = x;
+      dys[i] = evalAt(dFn, x);
+    }
+    const eps = (xHi - xLo) * 1e-7;
+    const out = [];
+    for (let i = 1; i <= N; i++) {
+      const a = dys[i - 1], b = dys[i];
+      if (!isFinite(a) || !isFinite(b)) continue;
+      // Sign change OR one side exactly zero
+      const cross = (a > 0 && b < 0) || (a < 0 && b > 0)
+                 || (a !== 0 && b === 0) || (a === 0 && b !== 0);
+      if (!cross) continue;
+      const g = (x) => evalAt(dFn, x);
+      const xstar = bisectRoot(g, xs[i - 1], xs[i], a, b);
+      if (xstar == null || !isFinite(xstar)) continue;
+      const ystar = evalAt(fFn, xstar);
+      if (!isFinite(ystar)) continue;
+      // Classify: if sign goes + to -, it's a max; - to + is min.
+      // Use samples a few epsilons away to avoid the zero region itself.
+      let type = "saddle";
+      const left  = evalAt(dFn, xstar - eps);
+      const right = evalAt(dFn, xstar + eps);
+      if (isFinite(left) && isFinite(right)) {
+        if (left > 0 && right < 0)      type = "max";
+        else if (left < 0 && right > 0) type = "min";
+      } else if (ddFn) {
+        const dd = evalAt(ddFn, xstar);
+        if (isFinite(dd)) {
+          if (dd < 0) type = "max";
+          else if (dd > 0) type = "min";
+        }
+      }
+      // Skip if too close to a previously-found point (numerical duplicate)
+      if (out.length && Math.abs(xstar - out[out.length - 1].x) < eps * 50) continue;
+      out.push({ x: xstar, y: ystar, type });
+      if (out.length >= 24) break;  // cap clutter
+    }
+    return out;
+  }
+
+  // ---- Limit / asymptote detection ------------------------------
+  // Vertical asymptote: |f(x)| diverges near some x = c.
+  // Strategy: dense scan of the visible region, locate magnitude
+  // spikes, refine with bisection. Also flag domain transitions
+  // where one side has |f| large.
+  function detectVerticalAsymptotes(fFn, xLo, xHi) {
+    const N = 1500;
+    const xs = new Array(N + 1);
+    const ys = new Array(N + 1);
+    const absys = [];
+    for (let i = 0; i <= N; i++) {
+      const x = xLo + (i / N) * (xHi - xLo);
+      const y = evalAt(fFn, x);
+      xs[i] = x; ys[i] = y;
+      if (isFinite(y)) absys.push(Math.abs(y));
+    }
+    if (absys.length < 30) return [];
+
+    absys.sort((a, b) => a - b);
+    const med = absys[Math.floor(absys.length / 2)];
+    const p90 = absys[Math.floor(absys.length * 0.9)];
+    const refScale = Math.max(med, p90 / 5, 1);
+    const thresh = Math.max(refScale * 50, 100);
+
+    const candidates = [];
+
+    // 1) Magnitude spikes
+    let i = 0;
+    while (i <= N) {
+      if (isFinite(ys[i]) && Math.abs(ys[i]) > thresh) {
+        let j = i, bestIdx = i, bestVal = Math.abs(ys[i]);
+        while (j <= N && isFinite(ys[j]) && Math.abs(ys[j]) > thresh) {
+          if (Math.abs(ys[j]) > bestVal) { bestVal = Math.abs(ys[j]); bestIdx = j; }
+          j++;
+        }
+        candidates.push(xs[bestIdx]);
+        i = j;
+      } else { i++; }
+    }
+
+    // Helpers for verifying a candidate is a true asymptote.
+    // ----------------------------------------------------------------
+    // probeOneSided: walk from xc in `sign` direction at decreasing
+    // distances. If |f| grows substantially as we approach xc from that
+    // side, it's an asymptote. Used for domain-edge transitions where
+    // xc has been bisected to lie on the defined-side boundary.
+    const probeOneSided = (xc, sign) => {
+      const probes = [];
+      for (const eps of [0.5, 0.1, 0.01, 0.001, 1e-5, 1e-8]) {
+        const y = evalAt(fFn, xc + sign * eps);
+        if (isFinite(y)) probes.push({ eps, mag: Math.abs(y) });
+      }
+      if (probes.length < 3) return false;
+      probes.sort((a, b) => a.eps - b.eps);
+      return probes[0].mag > Math.max(probes[probes.length - 1].mag * 2, 5);
+    };
+    // probeBothSides: probe both sides at decreasing distances.
+    // |f| should grow on at least one side to count as an asymptote.
+    const probeBothSides = (xc) => {
+      let nearMax = 0, farMax = 0;
+      const epsList = [0.1, 0.01, 0.001, 0.0001, 1e-7];
+      for (let i = 0; i < epsList.length; i++) {
+        for (const s of [-1, 1]) {
+          const y = evalAt(fFn, xc + s * epsList[i]);
+          if (isFinite(y)) {
+            const m = Math.abs(y);
+            if (i === 0)                       farMax  = Math.max(farMax,  m);
+            if (i === epsList.length - 1)      nearMax = Math.max(nearMax, m);
+          }
+        }
+      }
+      return nearMax > Math.max(farMax * 3, 5);
+    };
+    // findBoundary: between a known-defined point and a known-undefined
+    // point, bisect to locate the actual boundary (e.g., x=0 for ln).
+    const findBoundary = (xDef, xUndef) => {
+      let a = xDef, b = xUndef;
+      for (let i = 0; i < 40; i++) {
+        const m = (a + b) / 2;
+        if (isFinite(evalAt(fFn, m))) a = m; else b = m;
+        if (Math.abs(b - a) < 1e-13) break;
+      }
+      return { boundary: (a + b) / 2, defSide: a };
+    };
+
+    // 2) Domain transitions — bisect to find actual boundary, then probe
+    for (let k = 1; k <= N; k++) {
+      const fA = isFinite(ys[k - 1]);
+      const fB = isFinite(ys[k]);
+      if (fA === fB) continue;
+      const xDef   = fA ? xs[k - 1] : xs[k];
+      const xUndef = fA ? xs[k] : xs[k - 1];
+      const { boundary, defSide } = findBoundary(xDef, xUndef);
+      const dir = Math.sign(defSide - boundary) || (fA ? -1 : 1);
+      if (probeOneSided(boundary, dir)) candidates.push(boundary);
+    }
+
+    // 2b) Sign-flips with both sides finite but fast-growing — catches
+    // sampling that straddles a singularity (1/x where samples land on
+    // either side of x=0 without ever evaluating to NaN).
+    for (let k = 1; k <= N; k++) {
+      const a = ys[k - 1], b = ys[k];
+      if (!isFinite(a) || !isFinite(b)) continue;
+      if (Math.sign(a) === Math.sign(b)) continue;
+      if (Math.abs(a) < refScale * 3 || Math.abs(b) < refScale * 3) continue;
+      const xt = (xs[k - 1] * Math.abs(b) + xs[k] * Math.abs(a)) /
+                 (Math.abs(a) + Math.abs(b));
+      if (probeBothSides(xt)) candidates.push(xt);
+    }
+
+    // 3) Refine each candidate via local search
+    const refined = [];
+    const dxStart = (xHi - xLo) / N;
+    for (const c0 of candidates) {
+      let r = c0;
+      let bestMag = isFinite(evalAt(fFn, r)) ? Math.abs(evalAt(fFn, r)) : 0;
+      for (let step = dxStart / 2; step > 1e-12; step *= 0.5) {
+        const yL = evalAt(fFn, r - step);
+        const yR = evalAt(fFn, r + step);
+        const lMag = isFinite(yL) ? Math.abs(yL) : 0;
+        const rMag = isFinite(yR) ? Math.abs(yR) : 0;
+        if (lMag > bestMag && lMag >= rMag) { r -= step; bestMag = lMag; }
+        else if (rMag > bestMag) { r += step; bestMag = rMag; }
+      }
+      refined.push(r);
+    }
+
+    // 4) Cluster nearby asymptotes (within 0.5% of view width)
+    refined.sort((a, b) => a - b);
+    const out = [];
+    const minSep = (xHi - xLo) * 0.005;
+    for (const a of refined) {
+      if (out.length === 0 || a - out[out.length - 1] > minSep) {
+        out.push(a);
+      }
+    }
+    // Cap at 12 to avoid clutter for periodic functions
+    return out.slice(0, 12);
+  }
+
+  // Horizontal asymptote: f(x) → L as x → ±∞.
+  // Probe at three widely-separated x values (so slow convergers like
+  // arctan, where the gap shrinks as 1/x, are still detected).
+  function detectHorizontalAsymptotes(fFn) {
+    const probe = (sign) => {
+      const ys = [100, 1e4, 1e6].map(m => evalAt(fFn, sign * m));
+      if (!ys.every(isFinite)) return null;
+      const maxAbs = Math.max(...ys.map(Math.abs));
+      if (maxAbs > 1e9) return null;
+      const ref = Math.max(1, Math.abs(ys[2]));
+      const tightTol = 0.0005 * ref;
+      const looseTol = Math.max(0.05 * ref, 0.05);
+      if (Math.abs(ys[1] - ys[2]) > tightTol) return null;
+      if (Math.abs(ys[0] - ys[2]) > looseTol) return null;
+      return ys[2];
+    };
+    const left  = probe(-1);
+    const right = probe(1);
+    const out = [];
+    if (left != null && right != null &&
+        Math.abs(left - right) < 0.001 * Math.max(1, Math.abs(left))) {
+      out.push({ y: (left + right) / 2, side: "both" });
+    } else {
+      if (left  != null) out.push({ y: left,  side: "left"  });
+      if (right != null) out.push({ y: right, side: "right" });
+    }
+    return out;
+  }
+
+  // ---- Function setter ------------------------------------------
   function setFunction(src) {
     try {
       const r = parseFn(src);
       state.src = src;
-      state.fNode = r.node; state.dNode = r.dNode;
-      state.fFn   = r.fFn;   state.dFn = r.dFn;
+      state.fNode = r.node; state.dNode = r.dNode; state.ddNode = r.ddNode;
+      state.fFn   = r.fFn;   state.dFn   = r.dFn;   state.ddFn   = r.ddFn;
+      state.dType = r.dType; state.ddType = r.ddType;
       state.fLatex = r.node.toTex({ parenthesis: "auto", implicit: "show" });
-      // Try to simplify the derivative for a cleaner display.
-      // math.simplify can throw on weird expressions — fall back to raw.
-      let dLatexNode = r.dNode;
-      try { dLatexNode = math.simplify(r.dNode); } catch { /* keep raw */ }
-      state.dLatex = dLatexNode.toTex({ parenthesis: "auto", implicit: "show" });
+      state.dLatex = r.dNode
+        ? r.dNode.toTex({ parenthesis: "auto", implicit: "show" })
+        : "";
       state.err = null;
       fnCard.classList.remove("error");
       fnError.textContent = "";
+
+      // Detect asymptotes (function-only; redone on every set)
+      // Use a generous range so we have them ready when zoomed out.
+      const det_lo = Math.min(-50, sliderToX(+xMinSl.value));
+      const det_hi = Math.max( 50, sliderToX(+xMaxSl.value));
+      state.vAsymptotes = detectVerticalAsymptotes(r.fFn, det_lo, det_hi);
+      state.hAsymptotes = detectHorizontalAsymptotes(r.fFn);
+
+      // Critical points within current view
+      computeFeatures();
+
       renderDerivEq();
+      renderExtremaList();
       requestDraw();
     } catch (e) {
       state.err = e.message || String(e);
       fnCard.classList.add("error");
-      fnError.textContent = "Couldn't parse that. Try something like x^2, sin(x), or 1/(1+x^2).";
+      const msg = state.err.toLowerCase();
+      if (msg.includes("undefined function")) {
+        fnError.textContent = "Unknown function. Try sin, cos, tan, exp, log, abs, sqrt, sinh, cosh, arctan, …";
+      } else {
+        fnError.textContent = "Couldn't parse that. Try x^2, sin(x), 1/(1+x^2), or |x|.";
+      }
     }
   }
 
-  // ---- Safe evaluate --------------------------------------------
-  function evalAt(fn, x) {
-    try {
-      const y = fn.evaluate({ x });
-      if (typeof y !== "number" || !isFinite(y)) return NaN;
-      return y;
-    } catch { return NaN; }
+  // Recompute extrema within the current view. Cheap (~800 evals plus a
+  // few bisection rounds), so we re-run on every view change.
+  function computeFeatures() {
+    if (!state.fFn || !state.dFn) {
+      state.extrema = []; return;
+    }
+    const xLo = sliderToX(+xMinSl.value);
+    const xHi = sliderToX(+xMaxSl.value);
+    state.extrema = findCriticalPoints(state.fFn, state.dFn, state.ddFn, xLo, xHi);
+  }
+
+  // ---- Render the critical-points list in the side panel --------
+  function renderExtremaList() {
+    const root = $("extremaList");
+    if (!root) return;
+    const all = [...state.extrema.map(p => ({ ...p, kind: p.type }))]
+      .sort((a, b) => a.x - b.x);
+
+    if (all.length === 0) {
+      root.innerHTML = '<div class="empty">none in current view</div>';
+      return;
+    }
+    const labels = { max: "MAX", min: "MIN", saddle: "SADDLE" };
+    root.innerHTML = all.map(p => {
+      const cls = p.kind;
+      const lbl = labels[p.kind] || "";
+      const pt = `(${fmtSigned(p.x, 3)},  ${fmtSigned(p.y, 3)})`;
+      return `<div class="row ${cls}"><span class="tag">${lbl}</span><span class="pt">${pt}</span></div>`;
+    }).join("");
   }
 
   // ---- KaTeX render ---------------------------------------------
   function renderDerivEq() {
+    if (!readoutLbl) return;
+    if (state.dType === "numerical") {
+      readoutLbl.textContent = "Derivative (numerical)";
+      derivEq.innerHTML =
+        '<span style="color: var(--text-dim); font-style: italic; font-size: 12px;">' +
+        "no closed-form derivative; computed numerically" +
+        "</span>";
+      return;
+    }
+    readoutLbl.textContent = "Symbolic Derivative";
     try {
       katex.render(
-        `\\dfrac{d}{dx}\\,${state.fLatex} \\;=\\; ${state.dLatex}`,
+        "\\dfrac{d}{dx}\\," + state.fLatex + " \\;=\\; " + state.dLatex,
         derivEq, { throwOnError: false, displayMode: false, output: "html" }
       );
     } catch {
@@ -731,7 +1225,7 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
     }
   }
 
-  // ---- High-DPI canvas sizing -----------------------------------
+  // ---- Canvas sizing --------------------------------------------
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
@@ -740,24 +1234,55 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // ---- Auto y-range (robust percentile-based) -------------------
+  // ---- Y-range heuristic ----------------------------------------
+  // For "smooth" functions, use full min/max with padding.
+  // For "asymptotic" functions (where extreme tails dwarf the inner
+  // distribution), clamp via percentiles so the interesting part
+  // is visible instead of a flat line near the median.
   function autoYRange(ys) {
-    const valid = ys.filter(v => isFinite(v)).sort((a, b) => a - b);
+    const valid = [];
+    for (const v of ys) if (isFinite(v)) valid.push(v);
     if (valid.length === 0) return [-5, 5];
-    if (valid.length < 10) return [valid[0], valid[valid.length - 1]];
-    const pct = p => valid[Math.min(valid.length - 1, Math.max(0, Math.floor(p * (valid.length - 1))))];
-    let lo = pct(0.04), hi = pct(0.96);
-    const med = pct(0.5);
-    const iqr = pct(0.75) - pct(0.25);
-    if (iqr > 0) { lo = Math.max(lo, med - 6*iqr); hi = Math.min(hi, med + 6*iqr); }
+    valid.sort((a, b) => a - b);
+    const n = valid.length;
+    if (n < 10) {
+      const lo = valid[0], hi = valid[n - 1];
+      if (hi - lo < 1e-6) return [lo - 1, hi + 1];
+      const p = (hi - lo) * 0.12 + 0.2;
+      return [lo - p, hi + p];
+    }
+    const pct = q => valid[Math.min(n - 1, Math.max(0, Math.floor(q * (n - 1))))];
+    const min = valid[0], max = valid[n - 1];
+    const p5  = pct(0.05), p95 = pct(0.95);
+    const inner = p95 - p5;
+
+    let lo, hi;
+    const upperOutlier = inner > 0 && (max - p95) > inner * 5;
+    const lowerOutlier = inner > 0 && (p5  - min) > inner * 5;
+
+    if (upperOutlier || lowerOutlier) {
+      // asymptotic — percentile + IQR clamp
+      lo = pct(0.04); hi = pct(0.96);
+      const med = pct(0.5);
+      const iqr = pct(0.75) - pct(0.25);
+      if (iqr > 0) {
+        lo = Math.max(lo, med - 8 * iqr);
+        hi = Math.min(hi, med + 8 * iqr);
+      }
+    } else {
+      // smooth — full range
+      lo = min; hi = max;
+    }
     if (hi - lo < 1e-6) { lo -= 1; hi += 1; }
-    const pad = (hi - lo) * 0.15 + 0.2;
+    const pad = (hi - lo) * 0.10 + 0.2;
     return [lo - pad, hi + pad];
   }
 
-  // ---- "Nice" tick spacing (like d3.ticks) ----------------------
-  function niceTicks(min, max, target = 8) {
+  // ---- "Nice" tick spacing --------------------------------------
+  function niceTicks(min, max, target) {
+    target = target || 8;
     const range = max - min;
+    if (!isFinite(range) || range <= 0) return { step: 1, ticks: [] };
     const step0 = range / target;
     const mag = Math.pow(10, Math.floor(Math.log10(step0)));
     const norm = step0 / mag;
@@ -776,28 +1301,75 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
 
   function fmtTick(v, step) {
     if (v === 0) return "0";
-    const digits = Math.max(0, -Math.floor(Math.log10(step)) + (step < 1 ? 0 : 0));
-    const s = v.toFixed(digits);
-    return s.replace("-", "−"); // proper minus glyph
+    const av = Math.abs(v);
+    if (av >= 1e5 || (av > 0 && av < 1e-3)) {
+      // Compact scientific: 1.2e+7 not 12000000
+      return v.toExponential(1).replace("-", "−").replace("+", "");
+    }
+    const digits = Math.max(0, -Math.floor(Math.log10(step)));
+    return v.toFixed(digits).replace("-", "−");
   }
 
-  // ---- Simpson's rule -------------------------------------------
-  function simpson(fn, a, b, n = 400) {
+  // ---- Numerical formatters -------------------------------------
+  function fmtNum(v) {
+    if (!isFinite(v)) return "—";
+    const av = Math.abs(v);
+    if (av < 1e-4 && av !== 0) return v.toExponential(2).replace("-", "−");
+    if (av >= 1e5)              return v.toExponential(2).replace("-", "−");
+    let d = 4;
+    if (av >= 1000) d = 1;
+    else if (av >= 100) d = 2;
+    else if (av >= 10)  d = 3;
+    return v.toFixed(d).replace("-", "−");
+  }
+  function fmtSigned(v, d) {
+    if (d == null) d = 2;
+    if (!isFinite(v)) return "—";
+    const av = Math.abs(v);
+    if (av >= 1000) d = 0;
+    else if (av >= 100) d = Math.min(d, 1);
+    else if (av >= 10)  d = Math.min(d, 2);
+    return (v < 0 ? "−" : "") + av.toFixed(d);
+  }
+
+  // ---- Composite Simpson's rule ---------------------------------
+  function simpson(fFn, a, b, n) {
+    n = n || 600;
     if (a === b) return 0;
     const sign = a < b ? 1 : -1;
     if (a > b) { const t = a; a = b; b = t; }
-    n = Math.max(2, n - (n % 2));  // ensure even
+    n = Math.max(2, n - (n % 2));
     const h = (b - a) / n;
-    const fa = evalAt(fn, a), fb = evalAt(fn, b);
+    const fa = evalAt(fFn, a), fb = evalAt(fFn, b);
     if (!isFinite(fa) || !isFinite(fb)) return NaN;
     let sum = fa + fb;
     for (let i = 1; i < n; i++) {
       const x = a + i * h;
-      const y = evalAt(fn, x);
+      const y = evalAt(fFn, x);
       if (!isFinite(y)) return NaN;
       sum += (i % 2 === 0 ? 2 : 4) * y;
     }
     return sign * (h / 3) * sum;
+  }
+
+  // ---- Slider auto-adjustment to view ---------------------------
+  // When the view zooms, the tangent and area sliders should span the
+  // visible region. Use step="any" so the browser does not silently
+  // re-round the existing value when min/max change (e.g., x₀=1 with
+  // step=1 and min=−198.5 would be quantized to 0.5 or 1.5).
+  function syncSlidersToView(xMin, xMax) {
+    for (const sl of [tangentX, aVal, bVal]) {
+      const oldVal = +sl.value;
+      sl.step = "any";
+      sl.min = xMin;
+      sl.max = xMax;
+      sl.value = Math.min(xMax, Math.max(xMin, oldVal));
+    }
+    $("tangentXVal").textContent = fmtSigned(+tangentX.value);
+    $("aValDisp").textContent    = fmtSigned(+aVal.value);
+    $("bValDisp").textContent    = fmtSigned(+bVal.value);
+    $("aReadout").textContent    = fmtSigned(+aVal.value);
+    $("bReadout").textContent    = fmtSigned(+bVal.value);
   }
 
   // ---- Draw -----------------------------------------------------
@@ -810,22 +1382,21 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
 
   function draw() {
     if (!state.fFn) return;
-
     const W = canvas.clientWidth;
     const H = canvas.clientHeight;
     if (W === 0 || H === 0) return;
-
     ctx.clearRect(0, 0, W, H);
 
-    const margin = { t: 24, r: 24, b: 36, l: 52 };
+    const margin = MARGIN;
     const pw = W - margin.l - margin.r;
     const ph = H - margin.t - margin.b;
 
-    // domain
-    let xMin = +xMinSl.value, xMax = +xMaxSl.value;
+    let xMin = sliderToX(+xMinSl.value);
+    let xMax = sliderToX(+xMaxSl.value);
     if (xMax - xMin < 0.5) xMax = xMin + 0.5;
+    syncSlidersToView(xMin, xMax);
 
-    // sample
+    // Sample
     const N = Math.max(200, Math.min(1800, Math.round(pw * 2)));
     const xs = new Float64Array(N + 1);
     const ys = new Float64Array(N + 1);
@@ -835,29 +1406,22 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
       ys[i] = evalAt(state.fFn, x);
     }
 
-    // y range
-    const [yMin, yMax] = autoYRange(Array.from(ys));
+    const yRange = autoYRange(Array.from(ys));
+    const yMin = yRange[0], yMax = yRange[1];
 
     const xToPx = x => margin.l + (x - xMin) / (xMax - xMin) * pw;
     const yToPx = y => margin.t + (yMax - y) / (yMax - yMin) * ph;
 
-    // --- plot background (subtle) ---
-    ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.008)";
-    ctx.fillRect(margin.l, margin.t, pw, ph);
-    ctx.restore();
-
-    // --- ticks & gridlines ---
+    // ---- ticks ----------------------------------------------------
     const xt = niceTicks(xMin, xMax, 9);
     const yt = niceTicks(yMin, yMax, 7);
 
-    // minor grid
+    // minor grid (subdivisions of major)
     ctx.save();
     ctx.strokeStyle = P.gridSoft;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     for (const t of xt.ticks) {
-      const px = xToPx(t);
       const hstep = xt.step / 5;
       for (let k = 1; k < 5; k++) {
         const mx = xToPx(t - hstep * k);
@@ -867,7 +1431,6 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
       }
     }
     for (const t of yt.ticks) {
-      const py = yToPx(t);
       const vstep = yt.step / 5;
       for (let k = 1; k < 5; k++) {
         const my = yToPx(t - vstep * k);
@@ -884,30 +1447,18 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
     ctx.strokeStyle = P.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (const t of xt.ticks) {
-      const px = xToPx(t);
-      ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph);
-    }
-    for (const t of yt.ticks) {
-      const py = yToPx(t);
-      ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py);
-    }
+    for (const t of xt.ticks) { const px = xToPx(t); ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph); }
+    for (const t of yt.ticks) { const py = yToPx(t); ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py); }
     ctx.stroke();
     ctx.restore();
 
-    // axes through origin (highlighted)
+    // axes through origin
     ctx.save();
     ctx.strokeStyle = P.axis;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
-    if (xMin < 0 && xMax > 0) {
-      const px = xToPx(0);
-      ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph);
-    }
-    if (yMin < 0 && yMax > 0) {
-      const py = yToPx(0);
-      ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py);
-    }
+    if (xMin < 0 && xMax > 0) { const px = xToPx(0); ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph); }
+    if (yMin < 0 && yMax > 0) { const py = yToPx(0); ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py); }
     ctx.stroke();
     ctx.restore();
 
@@ -916,42 +1467,90 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
     ctx.fillStyle = P.tickTxt;
     ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
     ctx.textAlign = "center"; ctx.textBaseline = "top";
-    for (const t of xt.ticks) {
-      const px = xToPx(t);
-      ctx.fillText(fmtTick(t, xt.step), px, margin.t + ph + 6);
-    }
+    for (const t of xt.ticks) ctx.fillText(fmtTick(t, xt.step), xToPx(t), margin.t + ph + 6);
     ctx.textAlign = "right"; ctx.textBaseline = "middle";
-    for (const t of yt.ticks) {
-      const py = yToPx(t);
-      ctx.fillText(fmtTick(t, yt.step), margin.l - 8, py);
-    }
+    for (const t of yt.ticks) ctx.fillText(fmtTick(t, yt.step), margin.l - 8, yToPx(t));
     ctx.restore();
 
-    // --- AREA FILL ---
+    // ---- HORIZONTAL ASYMPTOTES (drawn before curve, behind it) ---
+    if (state.hAsymptotes && state.hAsymptotes.length > 0) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+      ctx.strokeStyle = P.horizAsy;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([5, 5]);
+      for (const ha of state.hAsymptotes) {
+        if (ha.y < yMin || ha.y > yMax) continue;
+        const py = yToPx(ha.y);
+        ctx.beginPath();
+        ctx.moveTo(margin.l, py); ctx.lineTo(margin.l + pw, py);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // labels
+      ctx.save();
+      ctx.fillStyle = P.horizText;
+      ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+      ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      for (const ha of state.hAsymptotes) {
+        if (ha.y < yMin || ha.y > yMax) continue;
+        ctx.fillText("y → " + fmtSigned(ha.y, 3), margin.l + 8, yToPx(ha.y) - 3);
+      }
+      ctx.restore();
+    }
+
+    // ---- VERTICAL ASYMPTOTES -------------------------------------
+    if (state.vAsymptotes && state.vAsymptotes.length > 0) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+      ctx.strokeStyle = P.asymptote;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 5]);
+      for (const xa of state.vAsymptotes) {
+        if (xa < xMin || xa > xMax) continue;
+        const px = xToPx(xa);
+        ctx.beginPath();
+        ctx.moveTo(px, margin.t); ctx.lineTo(px, margin.t + ph);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // labels (top of plot)
+      ctx.save();
+      ctx.fillStyle = P.asyText;
+      ctx.font = '11px "JetBrains Mono", ui-monospace, monospace';
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      for (const xa of state.vAsymptotes) {
+        if (xa < xMin || xa > xMax) continue;
+        ctx.fillText("x = " + fmtSigned(xa, 3), xToPx(xa) + 4, margin.t + 4);
+      }
+      ctx.restore();
+    }
+
+    // ---- AREA FILL ------------------------------------------------
     let integralValue = NaN;
     if (showArea.checked) {
       let a = +aVal.value, b = +bVal.value;
       if (a > b) { const t = a; a = b; b = t; }
-      const a_ = Math.max(a, xMin), b_ = Math.min(b, xMax);
-      if (b_ > a_) {
-        const M = Math.max(40, Math.round((b_ - a_) / (xMax - xMin) * N));
+      const aClip = Math.max(a, xMin), bClip = Math.min(b, xMax);
+      if (bClip > aClip) {
+        const M = Math.max(40, Math.round((bClip - aClip) / (xMax - xMin) * N));
         ctx.save();
         ctx.fillStyle = "rgba(131, 193, 103, 0.18)";
         ctx.beginPath();
         const y0px = yToPx(0);
-        ctx.moveTo(xToPx(a_), y0px);
-        let pathStarted = false;
+        ctx.moveTo(xToPx(aClip), y0px);
+        let started = false;
         for (let i = 0; i <= M; i++) {
-          const x = a_ + (i / M) * (b_ - a_);
+          const x = aClip + (i / M) * (bClip - aClip);
           const y = evalAt(state.fFn, x);
           if (isFinite(y)) {
             ctx.lineTo(xToPx(x), yToPx(y));
-            pathStarted = true;
-          } else if (pathStarted) {
+            started = true;
+          } else if (started) {
             ctx.lineTo(xToPx(x), y0px);
           }
         }
-        ctx.lineTo(xToPx(b_), y0px);
+        ctx.lineTo(xToPx(bClip), y0px);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
@@ -960,7 +1559,7 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
         ctx.save();
         ctx.strokeStyle = "rgba(131, 193, 103, 0.7)";
         ctx.lineWidth = 1.4;
-        for (const bnd of [a_, b_]) {
+        for (const bnd of [aClip, bClip]) {
           const y = evalAt(state.fFn, bnd);
           if (isFinite(y)) {
             ctx.beginPath();
@@ -971,26 +1570,19 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
         }
         ctx.restore();
       }
-      // numeric integral over the full [a,b] (even if partly off-screen)
-      integralValue = simpson(state.fFn, a, b, 600);
+      integralValue = simpson(state.fFn, a, b, 800);
     }
 
-    // --- FUNCTION CURVE (glow + line, with NaN gap + asymptote handling) ---
-    // Heuristic for detecting discontinuities between adjacent samples:
-    // a sign flip combined with a jump larger than half the y-range indicates
-    // an odd singularity (e.g. tan, 1/x) between the two samples. Break the
-    // path there to avoid drawing a bogus near-vertical connector.
-    const jumpThresh = (yMax - yMin) * 0.5;
+    // ---- FUNCTION CURVE (with discontinuity detection) -----------
+    const breakThresh = (yMax - yMin) * 0.05;
     function tracePath() {
       let started = false;
       let prevY = null;
       for (let i = 0; i <= N; i++) {
         const y = ys[i];
         if (!isFinite(y)) { started = false; prevY = null; continue; }
-        if (prevY !== null &&
-            Math.sign(y) !== Math.sign(prevY) &&
-            Math.abs(y - prevY) > jumpThresh) {
-          started = false;           // force a fresh moveTo — breaks the asymptote
+        if (prevY !== null && Math.abs(y - prevY) > breakThresh) {
+          started = false;
         }
         const py = yToPx(y);
         const px = xToPx(xs[i]);
@@ -999,31 +1591,76 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
         prevY = y;
       }
     }
-    // clip to plot area
     ctx.save();
     ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
-
     // glow
     ctx.strokeStyle = P.fnGlow;
     ctx.lineWidth = 6;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath(); tracePath(); ctx.stroke();
-
     // main line
     ctx.strokeStyle = P.fn;
     ctx.lineWidth = 2.2;
     ctx.beginPath(); tracePath(); ctx.stroke();
     ctx.restore();
 
-    // --- TANGENT LINE ---
+    // ---- CRITICAL POINTS + INFLECTION MARKERS --------------------
+    const showExtremaCb = $("showExtrema");
+    const drawExtrema = !showExtremaCb || showExtremaCb.checked;
+    if (drawExtrema) {
+      ctx.save();
+      ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+      // extrema: filled dot with subtle halo
+      for (const cp of state.extrema) {
+        if (cp.x < xMin || cp.x > xMax) continue;
+        if (cp.y < yMin || cp.y > yMax) continue;
+        const px = xToPx(cp.x), py = yToPx(cp.y);
+        // halo
+        ctx.fillStyle = P.extremaSoft;
+        ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.fill();
+        // background ring then fill (so it pops above curve)
+        ctx.fillStyle = P.bg;
+        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = P.extrema;
+        ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      // labels: max ABOVE the dot, min BELOW
+      ctx.save();
+      ctx.font = '10.5px "JetBrains Mono", ui-monospace, monospace';
+      for (const cp of state.extrema) {
+        if (cp.x < xMin || cp.x > xMax) continue;
+        if (cp.y < yMin || cp.y > yMax) continue;
+        const px = xToPx(cp.x), py = yToPx(cp.y);
+        ctx.fillStyle = P.extrema;
+        ctx.textAlign = "center";
+        if (cp.type === "max") {
+          ctx.textBaseline = "bottom";
+          ctx.fillText("max", px, py - 10);
+        } else if (cp.type === "min") {
+          ctx.textBaseline = "top";
+          ctx.fillText("min", px, py + 10);
+        }
+      }
+      ctx.restore();
+    }
+
+    // ---- TANGENT LINE --------------------------------------------
     let fx0 = NaN, dfx0 = NaN;
     if (showTangent.checked) {
       const x0 = +tangentX.value;
       fx0  = evalAt(state.fFn, x0);
       dfx0 = evalAt(state.dFn, x0);
       if (isFinite(fx0) && isFinite(dfx0)) {
-        const span = (xMax - xMin) * 0.42;
+        // Cap span so the tangent doesn't become a near-vertical streak
+        // when slope · half-width exceeds plot height. We limit y-rise to
+        // 60% of the visible y-range, which keeps the slope readable.
+        const xSpan = (xMax - xMin) * 0.42;
+        const ySpan = Math.abs(dfx0) > 1e-12
+          ? (yMax - yMin) * 0.6 / Math.abs(dfx0)
+          : Infinity;
+        const span = Math.min(xSpan, ySpan);
         const x1 = x0 - span, y1 = fx0 + dfx0 * (x1 - x0);
         const x2 = x0 + span, y2 = fx0 + dfx0 * (x2 - x0);
         ctx.save();
@@ -1036,46 +1673,113 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
         ctx.lineTo(xToPx(x2), yToPx(y2));
         ctx.stroke();
         ctx.restore();
-
-        // point marker
-        if (isFinite(fx0)) {
-          ctx.save();
-          // outer ring (bg separation)
-          ctx.fillStyle = P.bg;
-          ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 7, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = P.point;
-          ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 5, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-        }
+        // marker
+        ctx.save();
+        ctx.fillStyle = P.bg;
+        ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = P.point;
+        ctx.beginPath(); ctx.arc(xToPx(x0), yToPx(fx0), 5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       }
     }
 
-    // --- border of the plot frame ---
+    // ---- TRACE CURSOR (hover / touch) ----------------------------
+    // Only render when the cursor is reasonably close to the curve in
+    // pixel space — so it doesn't follow the user around the empty
+    // parts of the plot, only "lights up" on approach.
+    const TRACE_PROXIMITY_PX = 28;
+    if (state.hover.active) {
+      const hx = state.hover.x;
+      if (hx >= xMin && hx <= xMax) {
+        const hy = evalAt(state.fFn, hx);
+        const curvePy = isFinite(hy) ? yToPx(hy) : null;
+        const nearCurve = curvePy !== null
+          && Math.abs(curvePy - state.hover.yPx) <= TRACE_PROXIMITY_PX;
+        if (nearCurve) {
+        const px = xToPx(hx);
+        ctx.save();
+        ctx.beginPath(); ctx.rect(margin.l, margin.t, pw, ph); ctx.clip();
+        // vertical guide
+        ctx.strokeStyle = P.trace;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(px, margin.t);
+        ctx.lineTo(px, margin.t + ph);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // dot on curve
+        if (isFinite(hy) && hy >= yMin && hy <= yMax) {
+          const py = yToPx(hy);
+          ctx.fillStyle = P.bg;
+          ctx.beginPath(); ctx.arc(px, py, 5.5, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = P.fn;
+          ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+        // tooltip — three lines: x, f(x), f'(x)
+        if (isFinite(hy)) {
+          const hd = evalAt(state.dFn, hx);
+          const lines = [
+            `x  = ${fmtSigned(hx, 3)}`,
+            `f  = ${fmtSigned(hy, 3)}`,
+            `f' = ${isFinite(hd) ? fmtSigned(hd, 3) : "—"}`,
+          ];
+          ctx.font = '12px "JetBrains Mono", ui-monospace, monospace';
+          let maxW = 0;
+          for (const ln of lines) maxW = Math.max(maxW, ctx.measureText(ln).width);
+          const padX = 10, padY = 7, lineH = 15;
+          const w = maxW + padX * 2;
+          const h = lineH * lines.length + padY * 2 - 2;
+          // prefer above-and-right-of the curve dot; flip if no room
+          let tx, ty;
+          if (isFinite(hy) && hy >= yMin && hy <= yMax) {
+            const dotPy = yToPx(hy);
+            tx = px + 12;
+            ty = dotPy - h - 10;
+            if (ty < margin.t + 4) ty = dotPy + 12;
+          } else {
+            tx = px + 12;
+            ty = margin.t + 8;
+          }
+          if (tx + w > margin.l + pw - 4) tx = px - w - 12;
+          if (tx < margin.l + 4) tx = margin.l + 4;
+          if (ty + h > margin.t + ph - 4) ty = margin.t + ph - h - 4;
+
+          ctx.fillStyle = P.traceFill;
+          ctx.strokeStyle = "rgba(110, 120, 135, 0.6)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(tx, ty, w, h, 6);
+          else                ctx.rect(tx, ty, w, h);
+          ctx.fill(); ctx.stroke();
+
+          ctx.textAlign = "left";
+          ctx.textBaseline = "top";
+          for (let i = 0; i < lines.length; i++) {
+            // Color the f' line in tangent color so it visually links to slope
+            ctx.fillStyle = i === 2 ? P.tan : "rgba(220, 230, 240, 0.95)";
+            ctx.fillText(lines[i], tx + padX, ty + padY + i * lineH);
+          }
+        }
+        }  // end if (nearCurve)
+      }
+    }
+
+    // border
     ctx.save();
     ctx.strokeStyle = P.grid;
     ctx.lineWidth = 1;
     ctx.strokeRect(margin.l + 0.5, margin.t + 0.5, pw - 1, ph - 1);
     ctx.restore();
 
-    // --- update numeric readouts ---
-    $("fx0Val").textContent  = isFinite(fx0)  ? fmtNum(fx0)  : "—";
-    $("dfx0Val").textContent = isFinite(dfx0) ? fmtNum(dfx0) : "—";
-    $("integralVal").textContent = isFinite(integralValue) ? fmtNum(integralValue) : "—";
+    // ---- READOUT --------------------------------------------------
+    $("fx0Val").textContent     = fmtNum(fx0);
+    $("dfx0Val").textContent    = fmtNum(dfx0);
+    $("integralVal").textContent = fmtNum(integralValue);
   }
 
-  function fmtNum(v) {
-    if (!isFinite(v)) return "—";
-    const av = Math.abs(v);
-    if (av < 1e-4 && av !== 0) return v.toExponential(2).replace("-", "−");
-    if (av >= 1e4)              return v.toExponential(2).replace("-", "−");
-    return v.toFixed(4).replace("-", "−");
-  }
-
-  function fmtSigned(v, d = 2) {
-    return (v < 0 ? "−" : "") + Math.abs(v).toFixed(d);
-  }
-
-  // ---- Wire up --------------------------------------------------
+  // ---- Events ---------------------------------------------------
   fnInput.addEventListener("input", e => setFunction(e.target.value));
   document.querySelectorAll(".chip").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1092,36 +1796,95 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
   showTangent.addEventListener("change", requestDraw);
 
   function updateAreaReadouts() {
-    $("aValDisp").textContent = fmtSigned(+aVal.value);
-    $("bValDisp").textContent = fmtSigned(+bVal.value);
-    $("aReadout").textContent = fmtSigned(+aVal.value);
-    $("bReadout").textContent = fmtSigned(+bVal.value);
+    $("aValDisp").textContent  = fmtSigned(+aVal.value);
+    $("bValDisp").textContent  = fmtSigned(+bVal.value);
+    $("aReadout").textContent  = fmtSigned(+aVal.value);
+    $("bReadout").textContent  = fmtSigned(+bVal.value);
   }
   aVal.addEventListener("input", () => { updateAreaReadouts(); requestDraw(); });
   bVal.addEventListener("input", () => { updateAreaReadouts(); requestDraw(); });
   showArea.addEventListener("change", requestDraw);
 
+  const showExtremaCb = $("showExtrema");
+  if (showExtremaCb) showExtremaCb.addEventListener("change", requestDraw);
+
   function updateViewReadouts() {
-    $("xMinValDisp").textContent = fmtSigned(+xMinSl.value, 1);
-    $("xMaxValDisp").textContent = fmtSigned(+xMaxSl.value, 1);
+    $("xMinValDisp").textContent = fmtSigned(sliderToX(+xMinSl.value), 1);
+    $("xMaxValDisp").textContent = fmtSigned(sliderToX(+xMaxSl.value), 1);
   }
-  xMinSl.addEventListener("input", () => { updateViewReadouts(); requestDraw(); });
-  xMaxSl.addEventListener("input", () => { updateViewReadouts(); requestDraw(); });
+  function onViewChange() {
+    updateViewReadouts();
+    const xLo = sliderToX(+xMinSl.value), xHi = sliderToX(+xMaxSl.value);
+    if (state.fFn && (xLo < -50 || xHi > 50)) {
+      state.vAsymptotes = detectVerticalAsymptotes(state.fFn,
+        Math.min(-50, xLo), Math.max(50, xHi));
+    }
+    if (state.fFn) {
+      computeFeatures();
+      renderExtremaList();
+    }
+    requestDraw();
+  }
+  xMinSl.addEventListener("input", onViewChange);
+  xMaxSl.addEventListener("input", onViewChange);
 
   window.addEventListener("resize", () => { resizeCanvas(); requestDraw(); });
 
-  // ---- Init -----------------------------------------------------
-  resizeCanvas();
-  setFunction(fnInput.value);
-  updateAreaReadouts();
-  updateViewReadouts();
-  $("tangentXVal").textContent = fmtSigned(+tangentX.value);
+  // ---- Trace cursor: hover (mouse) + touch ----------------------
+  // Returns {x, yPx} where x is the data x-coord at the cursor and
+  // yPx is the cursor's CSS-pixel y (used to gate trace visibility:
+  // we only show the trace when the cursor is near the curve).
+  function pointerToData(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const pw = canvas.clientWidth - MARGIN.l - MARGIN.r;
+    const ph = canvas.clientHeight - MARGIN.t - MARGIN.b;
+    if (px < MARGIN.l || px > MARGIN.l + pw) return null;
+    if (py < MARGIN.t || py > MARGIN.t + ph) return null;
+    const xMin = sliderToX(+xMinSl.value), xMax = sliderToX(+xMaxSl.value);
+    return {
+      x: xMin + (px - MARGIN.l) / pw * (xMax - xMin),
+      yPx: py,
+    };
+  }
+  function onPointerMove(clientX, clientY) {
+    const d = pointerToData(clientX, clientY);
+    if (d == null) {
+      if (state.hover.active) { state.hover.active = false; requestDraw(); }
+      return;
+    }
+    state.hover.active = true;
+    state.hover.x = d.x;
+    state.hover.yPx = d.yPx;
+    requestDraw();
+  }
+  function onPointerLeave() {
+    if (state.hover.active) { state.hover.active = false; requestDraw(); }
+  }
+  canvas.addEventListener("mousemove", e => onPointerMove(e.clientX, e.clientY));
+  canvas.addEventListener("mouseleave", onPointerLeave);
+  canvas.addEventListener("touchstart", e => {
+    if (e.touches.length === 1) {
+      onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  canvas.addEventListener("touchmove", e => {
+    if (e.touches.length === 1) {
+      onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+      e.preventDefault();  // suppress page scroll while tracing
+    }
+  }, { passive: false });
+  canvas.addEventListener("touchend", onPointerLeave);
+  canvas.addEventListener("touchcancel", onPointerLeave);
 
-  // Keyboard shortcuts: arrow keys on tangent slider stepping, etc.
+  // Keyboard: arrow keys nudge tangent
   window.addEventListener("keydown", e => {
     if (e.target === fnInput) return;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      const d = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 0.01 : 0.1);
+      const range = (+tangentX.max) - (+tangentX.min);
+      const baseStep = range / 200;
+      const d = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? baseStep / 10 : baseStep);
       tangentX.value = Math.min(+tangentX.max, Math.max(+tangentX.min, +tangentX.value + d));
       $("tangentXVal").textContent = fmtSigned(+tangentX.value);
       requestDraw();
@@ -1129,7 +1892,14 @@ input[type="range"].sl:active::-webkit-slider-thumb { transform: scale(1.2); }
     }
   });
 
+  // ---- Init -----------------------------------------------------
+  resizeCanvas();
+  setFunction(fnInput.value);
+  updateAreaReadouts();
+  updateViewReadouts();
+  $("tangentXVal").textContent = fmtSigned(+tangentX.value);
 })();
+
 </script>
 </body>
 </html>
